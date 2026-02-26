@@ -1,0 +1,465 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  CartesianGrid, AreaChart, Area
+} from "recharts";
+
+// ─── MHT-CET Data ────────────────────────────────────────────────────────────
+const PHYSICS_SETS = {
+  "Set A 🔥": {
+    color: "#fb7185",
+    chapters: [
+      "Sound",
+      "Semiconductor",
+      "Semiconductor Devices",
+      "Superposition of Waves",
+      "Rotational Motion",
+      "Mechanical Properties",
+      "Kinetic Theory",
+      "Thermodynamics",
+    ],
+  },
+  "Set B ⚡": {
+    color: "#fbbf24",
+    chapters: [
+      "Magnetic Materials",
+      "Current Electricity",
+      "Oscillations",
+      "Wave Optics",
+      "Electrostatics",
+      "Gravitation",
+      "Dual Nature",
+    ],
+  },
+  "Set C 🌱": {
+    color: "#34d399",
+    chapters: [
+      "Thermal Properties",
+      "Optics",
+      "Motion in a Plane",
+      "Laws of Motion",
+      "Error and Vectors",
+    ],
+  },
+};
+
+const ALL_PHYSICS_CHAPTERS = Object.values(PHYSICS_SETS).flatMap((s) => s.chapters);
+
+const SUBJECTS = {
+  Physics: {
+    color: "#38bdf8", glow: "#0ea5e9", icon: "⚡",
+    chapters: ALL_PHYSICS_CHAPTERS,
+    sets: PHYSICS_SETS,
+  },
+  Chemistry: {
+    color: "#fb7185", glow: "#f43f5e", icon: "⚗️",
+    chapters: [
+      "Solid State", "Solutions & Colligative Properties", "Chemical Thermodynamics",
+      "Electrochemistry", "Chemical Kinetics", "Surface Chemistry",
+      "Metallurgy", "p-Block Elements", "d & f Block Elements",
+      "Coordination Compounds", "Halogen Derivatives", "Alcohols, Phenols & Ethers",
+      "Aldehydes & Ketones", "Carboxylic Acids", "Amines",
+      "Biomolecules", "Polymers", "Chemistry in Everyday Life",
+    ],
+  },
+  Mathematics: {
+    color: "#fbbf24", glow: "#f59e0b", icon: "∑",
+    chapters: [
+      "Mathematical Logic", "Matrices", "Trigonometric Functions",
+      "Pair of Straight Lines", "Vectors", "Three Dimensional Geometry",
+      "Line in Space", "Plane", "Linear Programming",
+      "Continuity", "Differentiation", "Applications of Derivatives",
+      "Integration", "Definite Integrals", "Applications of Definite Integrals",
+      "Differential Equations", "Probability Distribution", "Binomial Distribution", "Statistics",
+    ],
+  },
+};
+
+const STATUS = {
+  "untouched":  { label: "Not Started", short: "—",   dot: "#334155", text: "#64748b" },
+  "learning":   { label: "Learning",    short: "📖",  dot: "#1d4ed8", text: "#60a5fa" },
+  "revised":    { label: "Revised",     short: "↺",   dot: "#7c3aed", text: "#c084fc" },
+  "mastered":   { label: "Mastered",    short: "✓",   dot: "#065f46", text: "#34d399" },
+};
+
+const QUOTES = [
+  "The cosmos is under no obligation to make sense to you. But your hard work always pays off! 🌌",
+  "Every star you see took billions of years to shine. Your exam prep is almost done! ⭐",
+  "Even black holes can't stop light forever. Keep going! 🚀",
+  "Newton studied under an apple tree. You have the whole universe on your side. 💫",
+  "Space is infinite — and so is your potential to score high! 🌠",
+  "The universe began with one big bang. Your success starts with one focused session! ✨",
+  "Stars are born from pressure and dust. Diamonds too. So are toppers! 💎",
+];
+
+// ─── Star Field ───────────────────────────────────────────────────────────────
+const STARS = Array.from({ length: 180 }, (_, i) => ({
+  id: i,
+  x: Math.random() * 100,
+  y: Math.random() * 100,
+  r: Math.random() * 2 + 0.3,
+  op: Math.random() * 0.6 + 0.2,
+  dur: Math.random() * 4 + 2,
+  delay: Math.random() * 4,
+}));
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const fmt = (s) =>
+  `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+const today = () => new Date().toDateString();
+const isoNow = () => new Date().toISOString();
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+export default function App() {
+  const [tab, setTab] = useState("dashboard");
+  const [loaded, setLoaded] = useState(false);
+
+  // ── Persistent State
+  const [chapterStatus, setChapterStatus] = useState({});
+  const [sessions, setSessions] = useState([]);
+  const [streak, setStreak] = useState(0);
+  const [lastDate, setLastDate] = useState("");
+  const [examDate, setExamDate] = useState("2025-05-11");
+  const [dailyGoal, setDailyGoal] = useState(8);
+  const [notes, setNotes] = useState({});
+
+  // ── Timer State
+  const [timerMode, setTimerMode] = useState("focus");
+  const [timeLeft, setTimeLeft] = useState(25 * 60);
+  const [running, setRunning] = useState(false);
+  const [timerSubject, setTimerSubject] = useState("Physics");
+  const [sessionStart, setSessionStart] = useState(null);
+  const [completedPomos, setCompletedPomos] = useState(0);
+  const timerRef = useRef(null);
+
+  // ── UI State
+  const [subjTab, setSubjTab] = useState("Physics");
+  const [chapterSearch, setChapterSearch] = useState("");
+  const [quote] = useState(QUOTES[Math.floor(Math.random() * QUOTES.length)]);
+  const [confetti, setConfetti] = useState(false);
+  const [editGoal, setEditGoal] = useState(false);
+  const [goalInput, setGoalInput] = useState("8");
+
+  const MODES = { focus: 25*60, short: 5*60, long: 15*60 };
+  const MODE_LABELS = { focus: "🎯 Focus", short: "☕ Break", long: "🌙 Long Break" };
+
+  // ── Load
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await window.storage.get("mhtcet-cosmos-v1");
+        if (res?.value) {
+          const d = JSON.parse(res.value);
+          if (d.chapterStatus) setChapterStatus(d.chapterStatus);
+          if (d.sessions) setSessions(d.sessions);
+          if (d.streak) setStreak(d.streak);
+          if (d.lastDate) setLastDate(d.lastDate);
+          if (d.examDate) setExamDate(d.examDate);
+          if (d.dailyGoal) { setDailyGoal(d.dailyGoal); setGoalInput(String(d.dailyGoal)); }
+          if (d.notes) setNotes(d.notes);
+        }
+      } catch (_) {}
+      setLoaded(true);
+    })();
+  }, []);
+
+  // ── Save
+  const save = useCallback(async (patch) => {
+    try {
+      const res = await window.storage.get("mhtcet-cosmos-v1");
+      const prev = res?.value ? JSON.parse(res.value) : {};
+      await window.storage.set("mhtcet-cosmos-v1", JSON.stringify({ ...prev, ...patch }));
+    } catch (_) {}
+  }, []);
+
+  // ── Timer
+  useEffect(() => {
+    if (running) {
+      timerRef.current = setInterval(() => {
+        setTimeLeft((t) => {
+          if (t <= 1) {
+            clearInterval(timerRef.current);
+            setRunning(false);
+            if (timerMode === "focus") {
+              setCompletedPomos((p) => p + 1);
+              finishSession(25);
+            }
+            return MODES[timerMode];
+          }
+          return t - 1;
+        });
+      }, 1000);
+    } else {
+      clearInterval(timerRef.current);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [running, timerMode]);
+
+  const switchMode = (m) => {
+    setRunning(false); setTimerMode(m); setTimeLeft(MODES[m]);
+  };
+
+  const startTimer = () => {
+    if (timerMode === "focus") setSessionStart(Date.now());
+    setRunning(true);
+  };
+
+  const finishSession = (mins) => {
+    const s = {
+      id: Date.now(), subject: timerSubject,
+      minutes: mins, date: isoNow(),
+    };
+    setSessions((prev) => {
+      const next = [...prev, s];
+      updateStreak(next);
+      save({ sessions: next });
+      return next;
+    });
+    setConfetti(true);
+    setTimeout(() => setConfetti(false), 3000);
+  };
+
+  const markDone = () => {
+    if (sessionStart) {
+      const elapsed = Math.max(1, Math.round((Date.now() - sessionStart) / 60000));
+      finishSession(elapsed);
+    }
+    setRunning(false);
+    setTimeLeft(MODES[timerMode]);
+    setSessionStart(null);
+  };
+
+  const updateStreak = (allSessions) => {
+    const t = today();
+    const yest = new Date(Date.now() - 86400000).toDateString();
+    setLastDate((ld) => {
+      let newStreak = streak;
+      if (ld !== t) {
+        newStreak = ld === yest ? streak + 1 : 1;
+        setStreak(newStreak);
+        save({ streak: newStreak, lastDate: t });
+      }
+      return t;
+    });
+  };
+
+  // ── Chapter
+  const setStatus = (subj, ch, st) => {
+    setChapterStatus((prev) => {
+      const next = { ...prev, [`${subj}::${ch}`]: st };
+      save({ chapterStatus: next });
+      return next;
+    });
+  };
+
+  // ── Derived
+  const getStatus = (subj, ch) => chapterStatus[`${subj}::${ch}`] || "untouched";
+
+  const subjectStats = (subj) => {
+    const chs = SUBJECTS[subj].chapters;
+    const counts = { mastered: 0, revised: 0, learning: 0, untouched: 0 };
+    chs.forEach((c) => { counts[getStatus(subj, c)]++; });
+    return { ...counts, total: chs.length };
+  };
+
+  const totalChapters = Object.values(SUBJECTS).reduce((a, s) => a + s.chapters.length, 0);
+  const masteredTotal = Object.entries(chapterStatus).filter(([, v]) => v === "mastered").length;
+  const overallPct = Math.round((masteredTotal / totalChapters) * 100);
+
+  const daysLeft = Math.max(0, Math.ceil((new Date(examDate) - new Date()) / 86400000));
+
+  const todayMins = sessions
+    .filter((s) => new Date(s.date).toDateString() === today())
+    .reduce((a, s) => a + s.minutes, 0);
+  const todayHrs = +(todayMins / 60).toFixed(1);
+  const goalPct = Math.min(100, Math.round((todayHrs / dailyGoal) * 100));
+
+  const weekData = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(Date.now() - (6 - i) * 86400000);
+    const ds = d.toDateString();
+    const mins = sessions.filter((s) => new Date(s.date).toDateString() === ds).reduce((a, s) => a + s.minutes, 0);
+    return { day: d.toLocaleDateString("en", { weekday: "short" }), hrs: +(mins / 60).toFixed(1) };
+  });
+
+  const timerProgress = 1 - timeLeft / MODES[timerMode];
+  const circ = 2 * Math.PI * 88;
+  const timerColor = timerMode === "focus" ? "#818cf8" : timerMode === "short" ? "#34d399" : "#38bdf8";
+
+  // ─── Styles ────────────────────────────────────────────────────────────────
+  const card = {
+    background: "rgba(255,255,255,0.03)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: "18px",
+    padding: "20px",
+    backdropFilter: "blur(12px)",
+  };
+  const glowCard = (c) => ({
+    ...card,
+    borderColor: c + "33",
+    boxShadow: `0 0 30px ${c}18, inset 0 0 30px rgba(0,0,0,0.2)`,
+  });
+  const btn = (active, c = "#6366f1") => ({
+    background: active ? c + "28" : "transparent",
+    border: `1px solid ${active ? c + "88" : "rgba(255,255,255,0.1)"}`,
+    borderRadius: "10px",
+    padding: "8px 16px",
+    color: active ? c : "rgba(255,255,255,0.45)",
+    cursor: "pointer",
+    fontSize: "13px",
+    fontWeight: active ? "600" : "400",
+    transition: "all 0.2s",
+    boxShadow: active ? `0 0 14px ${c}44` : "none",
+  });
+
+  if (!loaded) {
+    return (
+      <div style={{ background: "#03030f", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ textAlign: "center", color: "white" }}>
+          <div style={{ fontSize: "48px", animation: "spin 3s linear infinite" }}>🌌</div>
+          <div style={{ marginTop: "16px", color: "rgba(255,255,255,0.5)", fontFamily: "monospace" }}>Initialising your cosmos…</div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Tabs ──────────────────────────────────────────────────────────────────
+  const Dashboard = () => (
+    <div style={{ display: "grid", gap: "16px" }}>
+      {/* Quote */}
+      <div style={{ ...card, background: "linear-gradient(135deg, rgba(99,102,241,0.15), rgba(168,85,247,0.1))", borderColor: "#818cf844", padding: "14px 18px" }}>
+        <p style={{ margin: 0, fontSize: "13.5px", fontStyle: "italic", color: "#c4b5fd", lineHeight: 1.6 }}>"{quote}"</p>
+      </div>
+
+      {/* Key Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "12px" }}>
+        {[
+          { label: "Days to Exam", val: daysLeft, unit: "days", color: "#fb7185", icon: "🎯" },
+          { label: "Study Streak", val: streak, unit: "days 🔥", color: "#fbbf24", icon: "⚡" },
+          { label: "Today Studied", val: todayHrs, unit: "hrs", color: "#34d399", icon: "⏱️" },
+          { label: "Chapters Done", val: masteredTotal, unit: `/${totalChapters}`, color: "#38bdf8", icon: "✅" },
+        ].map((s) => (
+          <div key={s.label} style={{ ...glowCard(s.color) }}>
+            <div style={{ fontSize: "22px", marginBottom: "6px" }}>{s.icon}</div>
+            <div style={{ fontSize: "26px", fontWeight: "800", color: s.color, letterSpacing: "-0.5px" }}>
+              {s.val}<span style={{ fontSize: "13px", fontWeight: "400", color: "rgba(255,255,255,0.45)", marginLeft: "3px" }}>{s.unit}</span>
+            </div>
+            <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.38)", marginTop: "3px" }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Overall Progress */}
+      <div style={card}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px", alignItems: "center" }}>
+          <span style={{ fontWeight: "700", fontSize: "14px" }}>🌌 Overall MHT-CET Mastery</span>
+          <span style={{ fontWeight: "800", fontSize: "20px", background: "linear-gradient(90deg,#818cf8,#c084fc)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{overallPct}%</span>
+        </div>
+        <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: "999px", height: "14px", overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${overallPct}%`, background: "linear-gradient(90deg, #6366f1, #a855f7, #ec4899)", borderRadius: "999px", transition: "width 0.6s ease", boxShadow: "0 0 12px #818cf888" }} />
+        </div>
+        <div style={{ display: "flex", gap: "0", marginTop: "14px" }}>
+          {Object.keys(SUBJECTS).map((subj, i) => {
+            const st = subjectStats(subj);
+            const pct = Math.round((st.mastered / st.total) * 100);
+            const c = SUBJECTS[subj].color;
+            return (
+              <div key={subj} onClick={() => { setTab("subjects"); setSubjTab(subj); }}
+                style={{ flex: 1, textAlign: "center", cursor: "pointer", padding: "10px 4px", borderRadius: "10px", transition: "background 0.2s" }}>
+                <div style={{ fontSize: "20px" }}>{SUBJECTS[subj].icon}</div>
+                <div style={{ fontWeight: "700", fontSize: "17px", color: c, marginTop: "2px" }}>{pct}%</div>
+                <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.4)", marginTop: "2px" }}>{subj}</div>
+                <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.3)" }}>{st.mastered}/{st.total}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Daily Goal */}
+      <div style={glowCard("#34d399")}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+          <span style={{ fontWeight: "600", fontSize: "14px" }}>⚡ Daily Goal</span>
+          <span style={{ color: "#34d399", fontSize: "13px", fontWeight: "700" }}>{todayHrs}h / {dailyGoal}h · {goalPct}%</span>
+        </div>
+        <div style={{ background: "rgba(255,255,255,0.07)", borderRadius: "999px", height: "10px", overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${goalPct}%`, background: "linear-gradient(90deg,#34d399,#10b981)", borderRadius: "999px", transition: "width 0.5s", boxShadow: "0 0 10px #34d39988" }} />
+        </div>
+        <div style={{ display: "flex", gap: "6px", marginTop: "10px", flexWrap: "wrap" }}>
+          {[4, 6, 8, 10, 12, 14].map((h) => (
+            <button key={h} onClick={() => { setDailyGoal(h); save({ dailyGoal: h }); }}
+              style={{ ...btn(dailyGoal === h, "#10b981"), padding: "4px 10px", fontSize: "12px" }}>{h}h</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Subject Cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px" }}>
+        {Object.keys(SUBJECTS).map((subj) => {
+          const st = subjectStats(subj);
+          const pct = Math.round((st.mastered / st.total) * 100);
+          const c = SUBJECTS[subj].color;
+          return (
+            <div key={subj} onClick={() => { setTab("subjects"); setSubjTab(subj); }}
+              style={{ ...glowCard(c), cursor: "pointer", transition: "transform 0.2s", userSelect: "none" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <span style={{ fontWeight: "700", fontSize: "14px" }}>{SUBJECTS[subj].icon} {subj}</span>
+                <span style={{ color: c, fontWeight: "800", fontSize: "16px" }}>{pct}%</span>
+              </div>
+              <div style={{ background: "rgba(255,255,255,0.07)", borderRadius: "999px", height: "6px", marginBottom: "10px" }}>
+                <div style={{ height: "100%", width: `${pct}%`, background: c, borderRadius: "999px", boxShadow: `0 0 8px ${c}` }} />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px", fontSize: "11px" }}>
+                <span style={{ color: "#34d399" }}>✓ {st.mastered} mastered</span>
+                <span style={{ color: "#c084fc" }}>↺ {st.revised} revised</span>
+                <span style={{ color: "#60a5fa" }}>📖 {st.learning} learning</span>
+                <span style={{ color: "rgba(255,255,255,0.35)" }}>○ {st.untouched} left</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Exam Date */}
+      <div style={{ ...card, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
+        <div>
+          <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)", marginBottom: "4px" }}>🗓️ MHT-CET Exam Date</div>
+          <div style={{ fontSize: "22px", fontWeight: "800", color: "#fb7185" }}>{daysLeft} days remaining</div>
+        </div>
+        <input type="date" value={examDate}
+          onChange={(e) => { setExamDate(e.target.value); save({ examDate: e.target.value }); }}
+          style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "10px", color: "white", padding: "8px 12px", fontSize: "13px", cursor: "pointer" }} />
+      </div>
+    </div>
+  );
+
+  const Subjects = () => {
+    const st = subjectStats(subjTab);
+    const c = SUBJECTS[subjTab].color;
+    const filtered = SUBJECTS[subjTab].chapters.filter((ch) =>
+      ch.toLowerCase().includes(chapterSearch.toLowerCase())
+    );
+    const pct = Math.round((st.mastered / st.total) * 100);
+
+    return (
+      <div>
+        {/* Tabs */}
+        <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
+          {Object.keys(SUBJECTS).map((subj) => (
+            <button key={subj} onClick={() => { setSubjTab(subj); setChapterSearch(""); }}
+              style={{ ...btn(subjTab === subj, SUBJECTS[subj].color), fontSize: "14px", padding: "10px 18px" }}>
+              {SUBJECTS[subj].icon} {subj}
+            </button>
+          ))}
+        </div>
+
+        {/* Progress Bar */}
+        <div style={{ ...glowCard(c), marginBottom: "14px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+            <span style={{ fontWeight: "600" }}>{subjTab} — {st.mastered}/{st.total} mastered</span>
+            <span style={{ color: c, fontWeight: "700" }}>{pct}%</span>
+          </div>
+          <div style={{ background: "rgba(255,255,255,0.07)", borderRadius: "999px", height: "8px" }}>
+            <div style={{ height: "100%", width: `${pct}%`, background: c, borderRadius: "999px", boxShadow: `0 0 8px ${c}`, transition: "width 0.4s" }} />
+          </div>
+          <div style={{ display: "flex", gap: "14px", marginTop: "10px", fontSize: "11px", flexWrap: "wrap" }}>
+            {Object.entries(STATUS).map(([key
