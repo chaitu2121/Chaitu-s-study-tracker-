@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<meta name="theme-color" content="#03030e"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="MHT-CET Cosmos"/>
+<title>🚀 MHT-CET Cosmos</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.8.0/Recharts.min.js"></script>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
+  html,body,#root{height:100%;background:#03030e}
+  body{overscroll-behavior:none;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes cf{0%{transform:translateY(-10px) rotate(0deg);opacity:1}100%{transform:translateY(110vh) rotate(720deg);opacity:0}}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+  .ta{animation:fadeUp .22s ease both}
+  input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.5}
+  ::-webkit-scrollbar{width:4px}
+  ::-webkit-scrollbar-thumb{background:rgba(129,140,248,.3);border-radius:2px}
+  ::-webkit-scrollbar-track{background:transparent}
+  button{outline:none;-webkit-user-select:none;user-select:none;border:none;font-family:inherit}
+  button:active{transform:scale(0.95)!important}
+  input{font-family:inherit}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback, useMemo, memo } = React;
+const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } = Recharts;
+
+// ─── Storage (localStorage for standalone) ────────────────────────────────────
+const LS = {
+  get: (k) => { try { return localStorage.getItem(k); } catch(_){return null;} },
+  set: (k,v) => { try { localStorage.setItem(k,v); } catch(_){} },
+};
+
+// ─── Static Data ──────────────────────────────────────────────────────────────
+const PHYSICS_SETS = {
+  "Set A 🔥":{ color:"#fb7185", chapters:["Sound","Semiconductor","Semiconductor Devices","Superposition of Waves","Rotational Motion","Mechanical Properties","Kinetic Theory","Thermodynamics"] },
+  "Set B ⚡": { color:"#fbbf24", chapters:["Magnetic Materials","Current Electricity","Oscillations","Wave Optics","Electrostatics","Gravitation","Dual Nature"] },
+  "Set C 🌱":{ color:"#34d399", chapters:["Thermal Properties","Optics","Motion in a Plane","Laws of Motion","Error and Vectors"] },
+};
+const ALL_PHYSICS = Object.values(PHYSICS_SETS).flatMap(s=>s.chapters);
+const SUBJECTS = {
+  Physics:     { color:"#38bdf8", icon:"⚡", chapters:ALL_PHYSICS, sets:PHYSICS_SETS },
+  Chemistry:   { color:"#fb7185", icon:"⚗️", chapters:["Solid State","Solutions & Colligative Properties","Chemical Thermodynamics","Electrochemistry","Chemical Kinetics","Surface Chemistry","Metallurgy","p-Block Elements","d & f Block Elements","Coordination Compounds","Halogen Derivatives","Alcohols, Phenols & Ethers","Aldehydes & Ketones","Carboxylic Acids","Amines","Biomolecules","Polymers","Chemistry in Everyday Life"] },
+  Mathematics: { color:"#fbbf24", icon:"∑",  chapters:["Mathematical Logic","Matrices","Trigonometric Functions","Pair of Straight Lines","Vectors","Three Dimensional Geometry","Line in Space","Plane","Linear Programming","Continuity","Differentiation","Applications of Derivatives","Integration","Definite Integrals","Applications of Definite Integrals","Differential Equations","Probability Distribution","Binomial Distribution","Statistics"] },
+};
+const STATUS = {
+  untouched:{ label:"Not Started", text:"#64748b" },
+  learning: { label:"Learning",    text:"#60a5fa" },
+  revised:  { label:"Revised",     text:"#c084fc" },
+  mastered: { label:"Mastered",    text:"#34d399" },
+};
+const MODES = { focus:1500, short:300, long:900 };
+const MODE_LABELS = { focus:"🎯 Focus", short:"☕ Break", long:"🌙 Long Break" };
+const QUOTES = [
+  "The cosmos is under no obligation to make sense to you. But your hard work always pays off! 🌌",
+  "Every star took billions of years to shine. Your exam prep is almost done! ⭐",
+  "Even black holes can't stop light forever. Keep going! 🚀",
+  "Newton studied under an apple tree. You have the whole universe on your side. 💫",
+  "Space is infinite — and so is your potential to score high! 🌠",
+  "The universe began with one big bang. Your success starts with one focused session! ✨",
+  "Stars are born from pressure and dust. Diamonds too. So are toppers! 💎",
+];
+const TOTAL_CHAPTERS = Object.values(SUBJECTS).reduce((a,s)=>a+s.chapters.length,0);
+const RANDOM_QUOTE = QUOTES[Math.floor(Math.random()*QUOTES.length)];
+const fmt = s=>`${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
+const todayStr = ()=>new Date().toDateString();
+const isoNow = ()=>new Date().toISOString();
+
+// ─── Style helpers ────────────────────────────────────────────────────────────
+const card  = { background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:"18px", padding:"18px", backdropFilter:"blur(10px)" };
+const gcard = c => ({ ...card, borderColor:c+"30", boxShadow:`0 0 26px ${c}14` });
+const pbtn  = (on,c) => ({ background:on?c+"26":"transparent", border:`1px solid ${on?c+"80":"rgba(255,255,255,0.1)"}`, borderRadius:"10px", padding:"8px 14px", color:on?c:"rgba(255,255,255,0.38)", cursor:"pointer", fontSize:"13px", fontWeight:on?"600":"400", transition:"all .15s", boxShadow:on?`0 0 12px ${c}30`:"none" });
+const pbar  = (c,pct) => ({ height:"100%", width:`${pct}%`, background:c, borderRadius:"999px", transition:"width .5s ease" });
+
+// ─── Star Canvas ──────────────────────────────────────────────────────────────
+const StarCanvas = memo(()=>{
+  const ref = useRef(null);
+  useEffect(()=>{
+    const canvas=ref.current, ctx=canvas.getContext("2d");
+    let raf;
+    const dpr=window.devicePixelRatio||1;
+    const resize=()=>{ canvas.width=window.innerWidth*dpr; canvas.height=window.innerHeight*dpr; canvas.style.width=window.innerWidth+"px"; canvas.style.height=window.innerHeight+"px"; ctx.scale(dpr,dpr); };
+    resize();
+    window.addEventListener("resize",resize,{passive:true});
+    const stars=Array.from({length:140},()=>({ x:Math.random()*window.innerWidth, y:Math.random()*window.innerHeight, r:Math.random()*1.4+0.2, base:Math.random()*0.4+0.1, amp:Math.random()*0.3+0.05, speed:Math.random()*0.6+0.2, phase:Math.random()*Math.PI*2 }));
+    const draw=t=>{ ctx.clearRect(0,0,window.innerWidth,window.innerHeight); const ts=t*0.001; for(const s of stars){ const a=s.base+s.amp*Math.sin(ts*s.speed+s.phase); ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fillStyle=`rgba(255,255,255,${a.toFixed(2)})`; ctx.fill(); } raf=requestAnimationFrame(draw); };
+    raf=requestAnimationFrame(draw);
+    return ()=>{ cancelAnimationFrame(raf); window.removeEventListener("resize",resize); };
+  },[]);
+  return <canvas ref={ref} style={{position:"fixed",inset:0,zIndex:0,pointerEvents:"none"}} />;
+});
+
+// ─── Confetti ─────────────────────────────────────────────────────────────────
+const CF=Array.from({length:20},(_,i)=>({ l:Math.random()*100, dur:1.3+Math.random()*.9, del:Math.random()*.35, col:["#818cf8","#f472b6","#fbbf24","#34d399","#38bdf8"][i%5] }));
+const Confetti=memo(()=><>{CF.map((c,i)=><div key={i} style={{position:"fixed",zIndex:999,pointerEvents:"none",left:`${c.l}%`,top:"-10px",width:"8px",height:"8px",borderRadius:"2px",background:c.col,animation:`cf ${c.dur}s ${c.del}s forwards`}} />)}</>);
+
+// ─── Chapter Row ──────────────────────────────────────────────────────────────
+const ChapterRow=memo(({ch,idx,status,onSet,accent})=>{
+  const cfg=STATUS[status];
+  return(
+    <div style={{background:"rgba(255,255,255,0.025)",border:`1px solid ${cfg.text}20`,borderRadius:"12px",padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"9px",flex:1,minWidth:"90px"}}>
+        {accent
+          ? <div style={{width:"20px",height:"20px",borderRadius:"6px",background:accent+"20",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{fontSize:"9px",color:accent,fontWeight:"700"}}>{idx+1}</span></div>
+          : <span style={{fontSize:"10px",color:"rgba(255,255,255,0.2)",width:"18px",flexShrink:0}}>{idx+1}</span>
+        }
+        <span style={{fontSize:"13px",color:status==="mastered"?"rgba(255,255,255,0.3)":"rgba(255,255,255,0.88)",textDecoration:status==="mastered"?"line-through":"none",transition:"color .2s"}}>{ch}</span>
+      </div>
+      <div style={{display:"flex",gap:"3px",flexShrink:0,flexWrap:"wrap"}}>
+        {Object.entries(STATUS).map(([s,scfg])=>(
+          <button key={s} onClick={()=>onSet(ch,s)} style={{background:status===s?scfg.text+"26":"transparent",border:`1px solid ${status===s?scfg.text:"rgba(255,255,255,0.1)"}`,borderRadius:"6px",padding:"3px 6px",color:status===s?scfg.text:"rgba(255,255,255,0.28)",fontSize:"9.5px",cursor:"pointer",fontWeight:status===s?"700":"400",whiteSpace:"nowrap",transition:"all .12s"}}>{scfg.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+});
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+function App(){
+  const [tab,setTab]           = useState("dashboard");
+  const [loaded,setLoaded]     = useState(false);
+  const [chSt,setChSt]         = useState({});
+  const [sessions,setSessions] = useState([]);
+  const [streak,setStreak]     = useState(0);
+  const [lastDate,setLastDate] = useState("");
+  const [examDate,setExamDate] = useState("2025-05-11");
+  const [goal,setGoal]         = useState(8);
+  const [tMode,setTMode]       = useState("focus");
+  const [tLeft,setTLeft]       = useState(1500);
+  const [running,setRunning]   = useState(false);
+  const [tSubj,setTSubj]       = useState("Physics");
+  const [sessStart,setSessStart]= useState(null);
+  const [pomos,setPomos]       = useState(0);
+  const [subjTab,setSubjTab]   = useState("Physics");
+  const [search,setSearch]     = useState("");
+  const [confetti,setConfetti] = useState(false);
+  const timerRef=useRef(null);
+  const liveRef=useRef({streak,lastDate,tMode,tSubj,sessStart});
+  useEffect(()=>{ liveRef.current={streak,lastDate,tMode,tSubj,sessStart}; },[streak,lastDate,tMode,tSubj,sessStart]);
+
+  // Load from localStorage
+  useEffect(()=>{
+    try{
+      const raw=LS.get("mhtcet-cosmos");
+      if(raw){ const d=JSON.parse(raw);
+        if(d.chSt)     setChSt(d.chSt);
+        if(d.sessions) setSessions(d.sessions);
+        if(d.streak)   setStreak(d.streak);
+        if(d.lastDate) setLastDate(d.lastDate);
+        if(d.examDate) setExamDate(d.examDate);
+        if(d.goal)     setGoal(d.goal);
+      }
+    }catch(_){}
+    setLoaded(true);
+  },[]);
+
+  // Debounced save
+  const pending=useRef({}); const saveT=useRef(null);
+  const save=useCallback(patch=>{
+    Object.assign(pending.current,patch);
+    clearTimeout(saveT.current);
+    saveT.current=setTimeout(()=>{ try{ const raw=LS.get("mhtcet-cosmos"); const prev=raw?JSON.parse(raw):{}; LS.set("mhtcet-cosmos",JSON.stringify({...prev,...pending.current})); pending.current={}; }catch(_){} },600);
+  },[]);
+
+  // Timer
+  useEffect(()=>{
+    if(running){ timerRef.current=setInterval(()=>{ setTLeft(t=>{ if(t<=1){ clearInterval(timerRef.current); setRunning(false); if(liveRef.current.tMode==="focus"){ setPomos(p=>p+1); doAddSession(25); } return MODES[liveRef.current.tMode]; } return t-1; }); },1000); }
+    else clearInterval(timerRef.current);
+    return ()=>clearInterval(timerRef.current);
+  },[running]);
+
+  const doAddSession=useCallback(mins=>{
+    const s={id:Date.now(),subject:liveRef.current.tSubj,minutes:mins,date:isoNow()};
+    setSessions(prev=>{ const next=[...prev,s]; const t=todayStr(),y=new Date(Date.now()-86400000).toDateString(); const {streak:sk,lastDate:ld}=liveRef.current; if(ld!==t){ const ns=ld===y?sk+1:1; setStreak(ns); setLastDate(t); save({sessions:next,streak:ns,lastDate:t}); } else save({sessions:next}); return next; });
+    setConfetti(true); setTimeout(()=>setConfetti(false),2800);
+  },[save]);
+
+  const switchMode=useCallback(m=>{ setRunning(false); setTMode(m); setTLeft(MODES[m]); setSessStart(null); },[]);
+  const startTimer=useCallback(()=>{ setSessStart(Date.now()); setRunning(true); },[]);
+  const resetTimer=useCallback(()=>{ setRunning(false); setTLeft(MODES[liveRef.current.tMode]); setSessStart(null); },[]);
+  const markDone=useCallback(()=>{ if(liveRef.current.sessStart) doAddSession(Math.max(1,Math.round((Date.now()-liveRef.current.sessStart)/60000))); setRunning(false); setTLeft(MODES[liveRef.current.tMode]); setSessStart(null); },[doAddSession]);
+  const setStatus=useCallback((subj,ch,st)=>{ setChSt(prev=>{ const next={...prev,[`${subj}::${ch}`]:st}; save({chSt:next}); return next; }); },[save]);
+  const getStatus=useCallback((subj,ch)=>chSt[`${subj}::${ch}`]||"untouched",[chSt]);
+
+  // Derived
+  const mastered=useMemo(()=>Object.values(chSt).filter(v=>v==="mastered").length,[chSt]);
+  const ovPct=useMemo(()=>Math.round((mastered/TOTAL_CHAPTERS)*100),[mastered]);
+  const subjStats=useMemo(()=>{ const out={}; for(const subj of Object.keys(SUBJECTS)){ const c={mastered:0,revised:0,learning:0,untouched:0}; for(const ch of SUBJECTS[subj].chapters) c[chSt[`${subj}::${ch}`]||"untouched"]++; out[subj]={...c,total:SUBJECTS[subj].chapters.length}; } return out; },[chSt]);
+  const daysLeft=useMemo(()=>Math.max(0,Math.ceil((new Date(examDate)-new Date())/86400000)),[examDate]);
+  const{todayMins,todayHrs,goalPct,weekData}=useMemo(()=>{ const t=todayStr(); const tm=sessions.filter(s=>new Date(s.date).toDateString()===t).reduce((a,s)=>a+s.minutes,0); const th=+(tm/60).toFixed(1); return{todayMins:tm,todayHrs:th,goalPct:Math.min(100,Math.round((th/goal)*100)),weekData:Array.from({length:7},(_,i)=>{ const d=new Date(Date.now()-(6-i)*86400000); const ds=d.toDateString(); const m=sessions.filter(s=>new Date(s.date).toDateString()===ds).reduce((a,s)=>a+s.minutes,0); return{day:d.toLocaleDateString("en",{weekday:"short"}),hrs:+(m/60).toFixed(1)}; })}; },[sessions,goal]);
+
+  const tColor=tMode==="focus"?"#818cf8":tMode==="short"?"#34d399":"#38bdf8";
+  const circ=2*Math.PI*88; const dashOff=circ*(1-tLeft/MODES[tMode]);
+
+  if(!loaded) return(
+    <div style={{background:"#03030e",height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:"14px",color:"white"}}>
+      <div style={{fontSize:"44px",animation:"spin 3s linear infinite"}}>🌌</div>
+      <div style={{color:"rgba(255,255,255,0.4)",fontSize:"13px"}}>Initialising your cosmos…</div>
+    </div>
+  );
+
+  // ── Dashboard ────────────────────────────────────────────────────────────────
+  const Dashboard=()=>(
+    <div className="ta" style={{display:"grid",gap:"13px"}}>
+      <div style={{...card,background:"linear-gradient(135deg,rgba(99,102,241,.13),rgba(168,85,247,.08))",borderColor:"#818cf840",padding:"13px 16px"}}>
+        <p style={{fontSize:"12.5px",fontStyle:"italic",color:"#c4b5fd",lineHeight:1.65}}>"{RANDOM_QUOTE}"</p>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
+        {[{l:"Days to Exam",v:daysLeft,u:"days",c:"#fb7185",i:"🎯"},{l:"Streak",v:streak,u:"🔥",c:"#fbbf24",i:"⚡"},{l:"Today",v:todayHrs,u:"hrs",c:"#34d399",i:"⏱️"},{l:"Mastered",v:mastered,u:`/${TOTAL_CHAPTERS}`,c:"#38bdf8",i:"✅"}].map(s=>(
+          <div key={s.l} style={gcard(s.c)}>
+            <div style={{fontSize:"19px",marginBottom:"4px"}}>{s.i}</div>
+            <div style={{fontSize:"22px",fontWeight:"800",color:s.c,letterSpacing:"-0.5px",lineHeight:1}}>{s.v}<span style={{fontSize:"11px",fontWeight:"400",color:"rgba(255,255,255,0.38)",marginLeft:"3px"}}>{s.u}</span></div>
+            <div style={{fontSize:"10px",color:"rgba(255,255,255,0.33)",marginTop:"3px"}}>{s.l}</div>
+          </div>
+        ))}
+      </div>
+      <div style={card}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:"8px",alignItems:"center"}}>
+          <span style={{fontWeight:"700",fontSize:"13px"}}>🌌 MHT-CET Mastery</span>
+          <span style={{fontWeight:"800",fontSize:"19px",background:"linear-gradient(90deg,#818cf8,#c084fc)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>{ovPct}%</span>
+        </div>
+        <div style={{background:"rgba(255,255,255,0.06)",borderRadius:"999px",height:"11px",overflow:"hidden"}}>
+          <div style={{...pbar("linear-gradient(90deg,#6366f1,#a855f7,#ec4899)",ovPct),boxShadow:"0 0 12px #818cf880"}} />
+        </div>
+        <div style={{display:"flex",marginTop:"13px"}}>
+          {Object.keys(SUBJECTS).map(subj=>{ const st=subjStats[subj]; const pct=Math.round((st.mastered/st.total)*100); const c=SUBJECTS[subj].color; return(
+            <div key={subj} onClick={()=>{setTab("subjects");setSubjTab(subj);}} style={{flex:1,textAlign:"center",cursor:"pointer",padding:"8px 2px",borderRadius:"10px"}}>
+              <div style={{fontSize:"18px"}}>{SUBJECTS[subj].icon}</div>
+              <div style={{fontWeight:"700",fontSize:"15px",color:c,marginTop:"2px"}}>{pct}%</div>
+              <div style={{fontSize:"9px",color:"rgba(255,255,255,0.36)",marginTop:"2px"}}>{subj}</div>
+              <div style={{fontSize:"9px",color:"rgba(255,255,255,0.26)"}}>{st.mastered}/{st.total}</div>
+            </div>
+          );})}
+        </div>
+      </div>
+      <div style={gcard("#34d399")}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+          <span style={{fontWeight:"600",fontSize:"13px"}}>⚡ Daily Goal</span>
+          <span style={{color:"#34d399",fontSize:"12px",fontWeight:"700"}}>{todayHrs}h / {goal}h · {goalPct}%</span>
+        </div>
+        <div style={{background:"rgba(255,255,255,0.07)",borderRadius:"999px",height:"9px",overflow:"hidden"}}>
+          <div style={{...pbar("linear-gradient(90deg,#34d399,#10b981)",goalPct),boxShadow:"0 0 8px #34d39880"}} />
+        </div>
+        <div style={{display:"flex",gap:"5px",marginTop:"9px",flexWrap:"wrap"}}>
+          {[4,6,8,10,12,14].map(h=><button key={h} onClick={()=>{setGoal(h);save({goal:h});}} style={{...pbtn(goal===h,"#10b981"),padding:"4px 9px",fontSize:"11px"}}>{h}h</button>)}
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
+        {Object.keys(SUBJECTS).map(subj=>{ const st=subjStats[subj]; const pct=Math.round((st.mastered/st.total)*100); const c=SUBJECTS[subj].color; return(
+          <div key={subj} onClick={()=>{setTab("subjects");setSubjTab(subj);}} style={{...gcard(c),cursor:"pointer"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
+              <span style={{fontWeight:"700",fontSize:"13px"}}>{SUBJECTS[subj].icon} {subj}</span>
+              <span style={{color:c,fontWeight:"800",fontSize:"15px"}}>{pct}%</span>
+            </div>
+            <div style={{background:"rgba(255,255,255,0.07)",borderRadius:"999px",height:"5px",marginBottom:"8px"}}>
+              <div style={{height:"100%",width:`${pct}%`,background:c,borderRadius:"999px",transition:"width .5s"}} />
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"2px",fontSize:"10px"}}>
+              <span style={{color:"#34d399"}}>✓ {st.mastered}</span>
+              <span style={{color:"#c084fc"}}>↺ {st.revised}</span>
+              <span style={{color:"#60a5fa"}}>📖 {st.learning}</span>
+              <span style={{color:"rgba(255,255,255,0.28)"}}>○ {st.untouched}</span>
+            </div>
+          </div>
+        );})}
+      </div>
+      <div style={{...card,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"10px"}}>
+        <div>
+          <div style={{fontSize:"10px",color:"rgba(255,255,255,0.36)",marginBottom:"3px"}}>🗓️ MHT-CET Exam Date</div>
+          <div style={{fontSize:"20px",fontWeight:"800",color:"#fb7185"}}>{daysLeft} days remaining</div>
+        </div>
+        <input type="date" value={examDate} onChange={e=>{setExamDate(e.target.value);save({examDate:e.target.value});}} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:"10px",color:"white",padding:"8px 10px",fontSize:"12px",cursor:"pointer"}} />
+      </div>
+    </div>
+  );
+
+  // ── Subjects ──────────────────────────────────────────────────────────────────
+  const Subjects=()=>{
+    const st=subjStats[subjTab]; const c=SUBJECTS[subjTab].color; const pct=Math.round((st.mastered/st.total)*100);
+    const handleSet=useCallback((ch,s)=>setStatus(subjTab,ch,s),[subjTab]);
+    const filtered=useMemo(()=>search?SUBJECTS[subjTab].chapters.filter(ch=>ch.toLowerCase().includes(search.toLowerCase())):null,[search,subjTab]);
+    return(
+      <div className="ta">
+        <div style={{display:"flex",gap:"6px",marginBottom:"12px",flexWrap:"wrap"}}>
+          {Object.keys(SUBJECTS).map(subj=><button key={subj} onClick={()=>{setSubjTab(subj);setSearch("");}} style={{...pbtn(subjTab===subj,SUBJECTS[subj].color),fontSize:"13px",padding:"8px 14px"}}>{SUBJECTS[subj].icon} {subj}</button>)}
+        </div>
+        <div style={{...gcard(c),marginBottom:"11px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
+            <span style={{fontWeight:"600",fontSize:"12px"}}>{subjTab} — {st.mastered}/{st.total} mastered</span>
+            <span style={{color:c,fontWeight:"700"}}>{pct}%</span>
+          </div>
+          <div style={{background:"rgba(255,255,255,0.07)",borderRadius:"999px",height:"7px"}}>
+            <div style={{...pbar(c,pct),boxShadow:`0 0 8px ${c}80`}} />
+          </div>
+          <div style={{display:"flex",gap:"10px",marginTop:"8px",fontSize:"10px",flexWrap:"wrap"}}>
+            {[["#34d399","mastered"],["#c084fc","revised"],["#60a5fa","learning"],["rgba(255,255,255,0.35)","untouched"]].map(([col,key])=><span key={key} style={{color:col}}>● {STATUS[key].label}: {st[key]}</span>)}
+          </div>
+        </div>
+        <input placeholder="🔍  Search chapters…" value={search} onChange={e=>setSearch(e.target.value)}
+          style={{width:"100%",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"11px",padding:"9px 13px",color:"white",fontSize:"13px",marginBottom:"11px",outline:"none"}} />
+        {subjTab==="Physics"&&!search?(
+          <div style={{display:"grid",gap:"16px"}}>
+            {Object.entries(SUBJECTS.Physics.sets).map(([setName,setData])=>{
+              const sm=setData.chapters.filter(ch=>getStatus("Physics",ch)==="mastered").length;
+              const sp=Math.round((sm/setData.chapters.length)*100);
+              return(
+                <div key={setName}>
+                  <div style={{display:"flex",alignItems:"center",gap:"9px",marginBottom:"8px",padding:"9px 13px",borderRadius:"12px",background:setData.color+"12",border:`1px solid ${setData.color}44`}}>
+                    <span style={{fontWeight:"800",fontSize:"13px",color:setData.color}}>{setName}</span>
+                    <div style={{flex:1,background:"rgba(255,255,255,0.08)",borderRadius:"999px",height:"6px"}}><div style={{...pbar(setData.color,sp),boxShadow:`0 0 8px ${setData.color}80`}} /></div>
+                    <span style={{fontSize:"11px",color:setData.color,fontWeight:"700",flexShrink:0}}>{sm}/{setData.chapters.length}</span>
+                  </div>
+                  <div style={{display:"grid",gap:"5px"}}>
+                    {setData.chapters.map((ch,idx)=><ChapterRow key={ch} ch={ch} idx={idx} status={getStatus("Physics",ch)} onSet={handleSet} accent={setData.color} />)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ):(
+          <div style={{display:"grid",gap:"5px"}}>
+            {(filtered||SUBJECTS[subjTab].chapters).map((ch,idx)=><ChapterRow key={ch} ch={ch} idx={idx} status={getStatus(subjTab,ch)} onSet={handleSet} accent={null} />)}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ── Timer ──────────────────────────────────────────────────────────────────────
+  const Timer=()=>{
+    const todaySess=useMemo(()=>sessions.filter(s=>new Date(s.date).toDateString()===todayStr()),[]);
+    return(
+      <div className="ta" style={{maxWidth:"460px",margin:"0 auto",display:"grid",gap:"13px"}}>
+        <div style={{display:"flex",gap:"6px"}}>
+          {Object.entries(MODE_LABELS).map(([m,label])=><button key={m} onClick={()=>switchMode(m)} style={{...pbtn(tMode===m,tColor),flex:1,fontSize:"11px"}}>{label}</button>)}
+        </div>
+        <div style={{display:"flex",gap:"6px",justifyContent:"center",flexWrap:"wrap"}}>
+          {Object.keys(SUBJECTS).map(subj=><button key={subj} onClick={()=>setTSubj(subj)} style={{...pbtn(tSubj===subj,SUBJECTS[subj].color),fontSize:"11px",padding:"6px 12px"}}>{SUBJECTS[subj].icon} {subj}</button>)}
+        </div>
+        <div style={{display:"flex",justifyContent:"center"}}>
+          <div style={{position:"relative",width:"200px",height:"200px"}}>
+            <svg width="200" height="200" style={{transform:"rotate(-90deg)"}}>
+              <circle cx="100" cy="100" r="88" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="9" />
+              <circle cx="100" cy="100" r="88" fill="none" stroke={tColor} strokeWidth="9" strokeLinecap="round"
+                strokeDasharray={circ} strokeDashoffset={dashOff}
+                style={{transition:"stroke-dashoffset 0.7s linear",filter:`drop-shadow(0 0 10px ${tColor})`}} />
+            </svg>
+            <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+              <div style={{fontSize:"48px",fontWeight:"800",letterSpacing:"-2px",lineHeight:1,fontVariantNumeric:"tabular-nums",color:"white"}}>{fmt(tLeft)}</div>
+              <div style={{fontSize:"11px",color:"rgba(255,255,255,0.38)",marginTop:"4px"}}>{MODE_LABELS[tMode]}</div>
+              <div style={{fontSize:"11px",color:SUBJECTS[tSubj].color,marginTop:"2px"}}>{SUBJECTS[tSubj].icon} {tSubj}</div>
+            </div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:"10px",justifyContent:"center",alignItems:"center"}}>
+          <button onClick={resetTimer} style={{...card,width:"44px",height:"44px",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:"18px",padding:0,border:"1px solid rgba(255,255,255,0.12)",color:"white"}}>↺</button>
+          <button onClick={running?()=>setRunning(false):startTimer} style={{background:running?"linear-gradient(135deg,rgba(239,68,68,.7),rgba(249,115,22,.7))":`linear-gradient(135deg,${tColor},${tColor}cc)`,border:"none",borderRadius:"16px",padding:"12px 38px",color:"white",fontSize:"16px",fontWeight:"700",cursor:"pointer",boxShadow:`0 0 20px ${tColor}50`}}>{running?"⏸  Pause":"▶  Start"}</button>
+          <button onClick={markDone} style={{...card,border:"1px solid rgba(52,211,153,0.28)",padding:"0 12px",height:"44px",cursor:"pointer",fontSize:"12px",color:"#34d399",background:"rgba(52,211,153,0.08)"}}>✓ Done</button>
+        </div>
+        <div style={{display:"flex",justifyContent:"center",gap:"6px",flexWrap:"wrap"}}>
+          {Array.from({length:Math.min(16,Math.max(4,pomos+1))},(_,i)=><div key={i} style={{width:"9px",height:"9px",borderRadius:"50%",background:i<pomos?"#818cf8":"rgba(255,255,255,0.1)",boxShadow:i<pomos?"0 0 6px #818cf8":"none",transition:"all .3s"}} />)}
+        </div>
+        <div style={{textAlign:"center",fontSize:"11px",color:"rgba(255,255,255,0.36)"}}>{pomos} pomodoro{pomos!==1?"s":""} today</div>
+        <div style={card}>
+          <div style={{fontWeight:"600",marginBottom:"8px",fontSize:"13px"}}>📋 Today's Sessions</div>
+          {todaySess.length===0
+            ?<div style={{color:"rgba(255,255,255,0.24)",textAlign:"center",padding:"16px",fontSize:"13px"}}>No sessions yet. Launch your first focus! 🚀</div>
+            :<div style={{display:"grid",gap:"5px",maxHeight:"160px",overflowY:"auto"}}>
+              {[...todaySess].reverse().map(s=>(
+                <div key={s.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 9px",background:"rgba(255,255,255,0.04)",borderRadius:"8px"}}>
+                  <span style={{color:SUBJECTS[s.subject]?.color||"#fff",fontSize:"11px"}}>{SUBJECTS[s.subject]?.icon} {s.subject}</span>
+                  <span style={{fontSize:"12px",fontWeight:"600",color:"white"}}>{s.minutes} min</span>
+                  <span style={{fontSize:"10px",color:"rgba(255,255,255,0.26)"}}>{new Date(s.date).toLocaleTimeString("en",{hour:"2-digit",minute:"2-digit"})}</span>
+                </div>
+              ))}
+            </div>
+          }
+          <div style={{marginTop:"8px",padding:"6px 11px",background:"rgba(52,211,153,.07)",borderRadius:"8px",fontSize:"11px",color:"#34d399",textAlign:"center"}}>Today: {todayMins}min ({todayHrs}h) · Goal: {goal}h</div>
+        </div>
+      </div>
+    );
+  };
+
+  // ── Analytics ──────────────────────────────────────────────────────────────────
+  const Analytics=()=>{
+    const totalMins=useMemo(()=>sessions.reduce((a,s)=>a+s.minutes,0),[]);
+    const totalHrs=+(totalMins/60).toFixed(1); const avgSess=sessions.length?Math.round(totalMins/sessions.length):0;
+    const subjHrs=useMemo(()=>Object.keys(SUBJECTS).map(subj=>({subj,color:SUBJECTS[subj].color,icon:SUBJECTS[subj].icon,mins:sessions.filter(s=>s.subject===subj).reduce((a,s)=>a+s.minutes,0)})),[]);
+    const maxMins=Math.max(...subjHrs.map(s=>s.mins),1);
+    const score=Math.round((mastered/TOTAL_CHAPTERS)*50+(Math.min(streak,30)/30)*20+(Math.min(totalHrs,200)/200)*30);
+    const lbl=score>=80?"🌟 Stellar":score>=60?"🚀 On Track":score>=40?"📖 Building Up":"🌱 Just Started";
+    return(
+      <div className="ta" style={{display:"grid",gap:"13px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"9px"}}>
+          {[{l:"Total Hours",v:totalHrs+"h",c:"#818cf8"},{l:"Sessions",v:sessions.length,c:"#fb7185"},{l:"Best Streak",v:streak+" 🔥",c:"#fbbf24"},{l:"Avg Session",v:avgSess+"m",c:"#34d399"}].map(s=>(
+            <div key={s.l} style={{...card,textAlign:"center"}}><div style={{fontSize:"21px",fontWeight:"800",color:s.c}}>{s.v}</div><div style={{fontSize:"9.5px",color:"rgba(255,255,255,0.34)",marginTop:"3px"}}>{s.l}</div></div>
+          ))}
+        </div>
+        <div style={card}>
+          <div style={{fontWeight:"600",marginBottom:"11px",fontSize:"13px"}}>📊 Study Hours (7 Days)</div>
+          <ResponsiveContainer width="100%" height={150}>
+            <BarChart data={weekData} barSize={24}>
+              <defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#818cf8"/><stop offset="100%" stopColor="#a855f7" stopOpacity={0.5}/></linearGradient></defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+              <XAxis dataKey="day" stroke="rgba(255,255,255,0.3)" fontSize={10} />
+              <YAxis stroke="rgba(255,255,255,0.3)" fontSize={10} />
+              <Tooltip contentStyle={{background:"#0d0d1f",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"10px",color:"white",fontSize:"11px"}} />
+              <Bar dataKey="hrs" fill="url(#bg)" radius={[5,5,0,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div style={card}>
+          <div style={{fontWeight:"600",marginBottom:"11px",fontSize:"13px"}}>⏱️ Time by Subject</div>
+          <div style={{display:"grid",gap:"11px"}}>
+            {subjHrs.map(({subj,color,icon,mins})=>(
+              <div key={subj}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:"3px",fontSize:"11px"}}><span style={{color}}>{icon} {subj}</span><span style={{color:"rgba(255,255,255,0.45)"}}>{+(mins/60).toFixed(1)}h</span></div>
+                <div style={{background:"rgba(255,255,255,0.06)",borderRadius:"999px",height:"8px"}}><div style={{...pbar(color,Math.round((mins/maxMins)*100))}} /></div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={card}>
+          <div style={{fontWeight:"600",marginBottom:"11px",fontSize:"13px"}}>📚 Chapter Completion</div>
+          <div style={{display:"grid",gap:"11px"}}>
+            {Object.keys(SUBJECTS).map(subj=>{ const st=subjStats[subj]; const c=SUBJECTS[subj].color; return(
+              <div key={subj}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:"3px",fontSize:"10.5px"}}><span style={{color:c}}>{SUBJECTS[subj].icon} {subj}</span><span style={{color:"rgba(255,255,255,0.4)"}}>{st.mastered}✓ {st.revised}↺ {st.learning}📖 {st.untouched}—</span></div>
+                <div style={{display:"flex",height:"8px",borderRadius:"999px",overflow:"hidden",gap:"1px"}}>
+                  {[{v:st.mastered,b:"#34d399"},{v:st.revised,b:"#c084fc"},{v:st.learning,b:"#60a5fa"},{v:st.untouched,b:"rgba(255,255,255,0.07)"}].map(({v,b},i)=>v>0?<div key={i} style={{flex:v,background:b}} />:null)}
+                </div>
+              </div>
+            );})}
+          </div>
+        </div>
+        <div style={{...gcard("#818cf8"),textAlign:"center"}}>
+          <div style={{fontSize:"11px",color:"rgba(255,255,255,0.38)",marginBottom:"5px"}}>🚀 Exam Readiness Score</div>
+          <div style={{fontSize:"56px",fontWeight:"900",background:"linear-gradient(90deg,#818cf8,#c084fc,#f472b6)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",lineHeight:1}}>{score}</div>
+          <div style={{fontSize:"15px",color:"#c4b5fd",fontWeight:"600",marginTop:"5px"}}>{lbl}</div>
+          <div style={{fontSize:"10px",color:"rgba(255,255,255,0.28)",marginTop:"4px"}}>mastery · streak · hours studied</div>
+          <div style={{marginTop:"11px",background:"rgba(255,255,255,0.05)",borderRadius:"999px",height:"7px",overflow:"hidden"}}>
+            <div style={{...pbar("linear-gradient(90deg,#818cf8,#f472b6)",score),boxShadow:"0 0 10px #818cf860"}} />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ── Shell ──────────────────────────────────────────────────────────────────────
+  return(
+    <div style={{background:"#03030e",minHeight:"100vh",color:"white",position:"relative",overflowX:"hidden"}}>
+      <StarCanvas />
+      <div style={{position:"fixed",inset:0,zIndex:0,pointerEvents:"none",background:"radial-gradient(ellipse at 15% 40%,rgba(99,102,241,.09) 0%,transparent 55%),radial-gradient(ellipse at 85% 15%,rgba(168,85,247,.08) 0%,transparent 50%),radial-gradient(ellipse at 55% 85%,rgba(236,72,153,.06) 0%,transparent 45%)"}} />
+      {confetti&&<Confetti />}
+      <div style={{position:"relative",zIndex:1,maxWidth:"860px",margin:"0 auto",padding:"18px 14px 84px"}}>
+        <div style={{textAlign:"center",marginBottom:"18px",paddingTop:"4px"}}>
+          <h1 style={{margin:0,fontSize:"clamp(20px,5vw,30px)",fontWeight:"900",background:"linear-gradient(135deg,#38bdf8 0%,#818cf8 40%,#f472b6 80%)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",letterSpacing:"-1px",lineHeight:1.1}}>🚀 MHT-CET Cosmos</h1>
+          <p style={{margin:"4px 0 0",fontSize:"10px",color:"rgba(255,255,255,0.28)",letterSpacing:"0.5px"}}>YOUR PERSONAL STUDY UNIVERSE</p>
+        </div>
+        {tab==="dashboard"&&<Dashboard />}
+        {tab==="subjects" &&<Subjects />}
+        {tab==="timer"    &&<Timer />}
+        {tab==="analytics"&&<Analytics />}
+      </div>
+      <nav style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:"rgba(3,3,14,0.95)",backdropFilter:"blur(20px)",borderTop:"1px solid rgba(255,255,255,0.07)",display:"flex",justifyContent:"center",padding:"6px 14px env(safe-area-inset-bottom,12px)",gap:"4px"}}>
+        {[{id:"dashboard",icon:"🏠",l:"Home"},{id:"subjects",icon:"📚",l:"Subjects"},{id:"timer",icon:"⏱️",l:"Focus"},{id:"analytics",icon:"📊",l:"Analytics"}].map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,maxWidth:"110px",background:tab===t.id?"rgba(129,140,248,.14)":"transparent",border:`1px solid ${tab===t.id?"rgba(129,140,248,.3)":"transparent"}`,borderRadius:"12px",padding:"7px 4px",color:tab===t.id?"#a5b4fc":"rgba(255,255,255,0.3)",cursor:"pointer",fontSize:"10px",display:"flex",flexDirection:"column",alignItems:"center",gap:"2px",transition:"all .15s",boxShadow:tab===t.id?"0 0 10px rgba(129,140,248,.18)":"none"}}>
+            <span style={{fontSize:"20px",lineHeight:1}}>{t.icon}</span>{t.l}
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
